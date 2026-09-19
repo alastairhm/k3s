@@ -44,6 +44,27 @@ data:
             url: "http://optiplex3050.taile1582c.ts.net:8096/"
             target: "_blank"
 
+          - name: "Transmission"
+            subtitle: "Torrent client"
+            icon: "fas fa-magnet"
+            url: "http://dell3050.duckdns.org:9091/transmission/web/"
+            target: "_blank"
+
+      - name: "Automation"
+        icon: "fas fa-robot"
+        items:
+          - name: "Home Assistant"
+            subtitle: "Home automation"
+            icon: "fas fa-house-signal"
+            url: "https://gsacqw42voxqxak5fmwjqbmyd0g12rzf.ui.nabu.casa/lovelace/0"
+            target: "_blank"
+
+          - name: "n8n"
+            subtitle: "Workflow automation"
+            icon: "fas fa-project-diagram"
+            url: "http://dell3050.duckdns.org:5678/home/workflows"
+            target: "_blank"
+
       - name: "Experiments"
         icon: "fas fa-flask"
         items:
