@@ -1,0 +1,21 @@
+# Optional: reach homer via Traefik on port 80/443 with a hostname instead of
+# the NodePort. Add "192.168.3.43 homer.local" to your /etc/hosts (or your
+# router/DNS), then this Ingress routes http://homer.local/ to the service.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homer
+  namespace: applications
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: homer.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homer
+                port:
+                  number: 80

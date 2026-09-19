@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: homer-config
+  namespace: applications
+data:
+  config.yml: |
+    ---
+    title: "Homelab"
+    subtitle: "optiplex3050 · k3s"
+    theme: default
+    header: true
+    footer: false
+    columns: "3"
+
+    links:
+      - name: "k3s repo"
+        icon: "fab fa-github"
+        url: "https://github.com/alastairhm/k3s"
+        target: "_blank"
+
+    services:
+      - name: "Infrastructure"
+        icon: "fas fa-server"
+        items:
+          - name: "Portainer"
+            subtitle: "Container & cluster management"
+            icon: "fas fa-ship"
+            url: "https://192.168.3.43:9443"
+            target: "_blank"
+
+      # Add more groups/items here as you deploy new services, e.g.:
+      # - name: "Applications"
+      #   icon: "fas fa-cubes"
+      #   items:
+      #     - name: "My App"
+      #       subtitle: "What it does"
+      #       icon: "fas fa-cube"
+      #       url: "http://my-app.local"
+      #       target: "_blank"

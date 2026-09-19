@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: homer
+  namespace: applications
+spec:
+  selector:
+    app: homer
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30081
+  type: NodePort

@@ -23,6 +23,11 @@ manifests/
       deployment.yaml
       service.yaml        # NodePort 30080, for quick testing with no DNS setup
       ingress.yaml         # optional Traefik host-based routing (whoami.local)
+    homer/                 # homelab dashboard (github.com/bastienwirtz/homer)
+      configmap.yaml       # config.yml — service links shown on the dashboard
+      deployment.yaml
+      service.yaml        # NodePort 30081
+      ingress.yaml         # optional Traefik host-based routing (homer.local)
 ```
 
 Each subdirectory under `manifests/applications/` is a self-contained app: Deployment + Service
@@ -47,6 +52,14 @@ Reach the whoami test app:
 - NodePort (no setup required): `curl http://192.168.3.43:30080/`
 - Ingress (needs a hosts entry, e.g. `192.168.3.43 whoami.local` in `/etc/hosts`):
   `curl http://whoami.local/`
+
+Reach the homer dashboard:
+
+- NodePort (no setup required): open `http://192.168.3.43:30081/`
+- Ingress (needs a hosts entry, e.g. `192.168.3.43 homer.local` in `/etc/hosts`):
+  open `http://homer.local/`
+- Edit `manifests/applications/homer/configmap.yaml` to add/change dashboard links, then
+  `kubectl apply -f manifests/applications/homer/configmap.yaml && kubectl -n applications rollout restart deployment/homer`
 
 Remove an app:
 
