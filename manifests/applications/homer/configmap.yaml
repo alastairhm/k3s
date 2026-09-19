@@ -38,6 +38,12 @@ data:
             url: "http://dell3050.duckdns.org:8096/"
             target: "_blank"
 
+          - name: "Jellyfin (Tailscale)"
+            subtitle: "Media server via Tailscale"
+            icon: "fas fa-film"
+            url: "http://optiplex3050.taile1582c.ts.net:8096/"
+            target: "_blank"
+
       - name: "Experiments"
         icon: "fas fa-flask"
         items:
