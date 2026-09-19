@@ -80,6 +80,12 @@ data:
             url: "http://optiplex3050.taile1582c.ts.net:8096/"
             target: "_blank"
 
+          - name: "Calibre Web"
+            subtitle: "E-book library"
+            icon: "fas fa-book"
+            url: "http://dell3050.duckdns.org:32771"
+            target: "_blank"
+
       - name: "Downloads"
         icon: "fas fa-download"
         items:
