@@ -1,5 +1,7 @@
 # k3s
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Kubernetes manifests for a single-node k3s homelab cluster, managed alongside Portainer
 (the Portainer agent runs in-cluster; the Portainer server itself runs outside this repo's scope).
 
