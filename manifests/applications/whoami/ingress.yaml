@@ -1,18 +1,20 @@
-# Optional: reach whoami via Traefik on port 80/443 with a hostname instead of
-# the NodePort. Add "192.168.3.43 whoami.local" to your /etc/hosts (or your
-# router/DNS), then this Ingress routes http://whoami.local/ to the service.
+# Reachable at http://dell3050.duckdns.org/whoami/ (DuckDNS hostname for this
+# host). Multiple apps share the one DuckDNS hostname via path-based routing;
+# see homer/ingress.yaml for the sibling example on /homer.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: whoami
   namespace: applications
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: applications-whoami-stripprefix@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
-    - host: whoami.local
+    - host: dell3050.duckdns.org
       http:
         paths:
-          - path: /
+          - path: /whoami
             pathType: Prefix
             backend:
               service:

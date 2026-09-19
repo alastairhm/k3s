@@ -1,0 +1,10 @@
+# Strips the /whoami path prefix before forwarding to the whoami service.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: whoami-stripprefix
+  namespace: applications
+spec:
+  stripPrefix:
+    prefixes:
+      - /whoami

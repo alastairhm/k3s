@@ -7,8 +7,11 @@ Kubernetes manifests for a single-node k3s homelab cluster, managed alongside Po
 
 ## Cluster
 
-- Node: `optiplex3050` (single control-plane node), internal IP `192.168.3.43`
-- Ingress: Traefik (k3s default), exposed via the built-in ServiceLB at `192.168.3.43:80`/`:443`
+- Node: `optiplex3050` (single control-plane node), internal IP `192.168.3.43`, DuckDNS hostname
+  `dell3050.duckdns.org`
+- Ingress: Traefik (k3s default), exposed via the built-in ServiceLB at `192.168.3.43:80`/`:443`.
+  Apps share the one DuckDNS hostname via path-based routing (see below), since DuckDNS's free
+  tier gives one hostname rather than wildcard subdomains.
 - Namespaces of interest:
   - `applications` — where experiment workloads in this repo live
   - `portainer` — Portainer agent
@@ -22,12 +25,14 @@ manifests/
     whoami/               # example test app (traefik/whoami)
       deployment.yaml
       service.yaml        # NodePort 30080, for quick testing with no DNS setup
-      ingress.yaml         # optional Traefik host-based routing (whoami.local)
+      ingress.yaml         # dell3050.duckdns.org/whoami
+      middleware.yaml      # strips the /whoami prefix before forwarding
     homer/                 # homelab dashboard (github.com/bastienwirtz/homer)
       configmap.yaml       # config.yml — service links shown on the dashboard
       deployment.yaml
       service.yaml        # NodePort 30081
-      ingress.yaml         # optional Traefik host-based routing (homer.local)
+      ingress.yaml         # dell3050.duckdns.org/homer
+      middleware.yaml      # strips the /homer prefix before forwarding
 ```
 
 Each subdirectory under `manifests/applications/` is a self-contained app: Deployment + Service
@@ -50,16 +55,20 @@ kubectl -n applications get pods,svc,ingress
 Reach the whoami test app:
 
 - NodePort (no setup required): `curl http://192.168.3.43:30080/`
-- Ingress (needs a hosts entry, e.g. `192.168.3.43 whoami.local` in `/etc/hosts`):
-  `curl http://whoami.local/`
+- Ingress (via DuckDNS): `curl http://dell3050.duckdns.org/whoami/`
 
 Reach the homer dashboard:
 
 - NodePort (no setup required): open `http://192.168.3.43:30081/`
-- Ingress (needs a hosts entry, e.g. `192.168.3.43 homer.local` in `/etc/hosts`):
-  open `http://homer.local/`
+- Ingress (via DuckDNS): open `http://dell3050.duckdns.org/homer/`
 - Edit `manifests/applications/homer/configmap.yaml` to add/change dashboard links, then
   `kubectl apply -f manifests/applications/homer/configmap.yaml && kubectl -n applications rollout restart deployment/homer`
+
+New apps added under `manifests/applications/` follow the same path-based pattern: give the
+Ingress `host: dell3050.duckdns.org` with a unique `path: /<app>`, and add a matching
+`Middleware` with `stripPrefix.prefixes: ["/<app>"]` referenced via the
+`traefik.ingress.kubernetes.io/router.middlewares: applications-<app>-stripprefix@kubernetescrd`
+annotation (see whoami/ or homer/ for a working example).
 
 Remove an app:
 

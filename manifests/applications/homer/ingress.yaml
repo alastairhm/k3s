@@ -1,18 +1,20 @@
-# Optional: reach homer via Traefik on port 80/443 with a hostname instead of
-# the NodePort. Add "192.168.3.43 homer.local" to your /etc/hosts (or your
-# router/DNS), then this Ingress routes http://homer.local/ to the service.
+# Reachable at http://dell3050.duckdns.org/homer/ (DuckDNS hostname for this
+# host). Multiple apps share the one DuckDNS hostname via path-based routing;
+# see whoami/ingress.yaml for the sibling example on /whoami.
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: homer
   namespace: applications
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: applications-homer-stripprefix@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
-    - host: homer.local
+    - host: dell3050.duckdns.org
       http:
         paths:
-          - path: /
+          - path: /homer
             pathType: Prefix
             backend:
               service:

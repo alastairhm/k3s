@@ -1,0 +1,11 @@
+# Strips the /homer path prefix before forwarding to the homer service, since
+# homer's own assets are referenced relative to "/", not "/homer".
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: homer-stripprefix
+  namespace: applications
+spec:
+  stripPrefix:
+    prefixes:
+      - /homer
