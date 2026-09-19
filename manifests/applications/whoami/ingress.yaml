@@ -1,0 +1,21 @@
+# Optional: reach whoami via Traefik on port 80/443 with a hostname instead of
+# the NodePort. Add "192.168.3.43 whoami.local" to your /etc/hosts (or your
+# router/DNS), then this Ingress routes http://whoami.local/ to the service.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whoami
+  namespace: applications
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: whoami.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: whoami
+                port:
+                  number: 80
