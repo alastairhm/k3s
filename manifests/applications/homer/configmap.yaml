@@ -29,6 +29,42 @@ data:
             url: "https://dell3050.duckdns.org:9443"
             target: "_blank"
 
+          - name: "Pi-hole"
+            subtitle: "DNS & ad blocking"
+            icon: "fas fa-shield-alt"
+            url: "http://192.168.3.55/admin/"
+            target: "_blank"
+
+      - name: "Monitoring"
+        icon: "fas fa-chart-line"
+        items:
+          - name: "Beszel"
+            subtitle: "Server monitoring"
+            icon: "fas fa-heartbeat"
+            url: "http://dell3050.duckdns.org:8090"
+            target: "_blank"
+
+          - name: "Chronograf"
+            subtitle: "InfluxDB dashboards"
+            icon: "fas fa-chart-area"
+            url: "http://192.168.3.55:8888/sources/0/dashboards/1?refresh=Paused&lower=now%28%29%20-%207d"
+            target: "_blank"
+
+      - name: "Dev"
+        icon: "fas fa-code-branch"
+        items:
+          - name: "Gitea"
+            subtitle: "Git hosting"
+            icon: "fas fa-code-branch"
+            url: "http://dell3050.duckdns.org:3333"
+            target: "_blank"
+
+          - name: "Woodpecker"
+            subtitle: "CI/CD"
+            icon: "fas fa-dove"
+            url: "http://dell3050.duckdns.org:8888"
+            target: "_blank"
+
       - name: "Media"
         icon: "fas fa-photo-video"
         items:
