@@ -1,0 +1,18 @@
+# kubeconfig / credentials
+kubeconfig
+kubeconfig.yaml
+*kubeconfig*.yaml
+.kube/
+*.kubeconfig
+
+# secrets
+*secret*.yaml
+*.pem
+*.key
+*.crt
+.env
+.env.*
+
+# editor / OS cruft
+.DS_Store
+*.swp
