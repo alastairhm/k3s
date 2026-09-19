@@ -44,6 +44,9 @@ data:
             url: "http://optiplex3050.taile1582c.ts.net:8096/"
             target: "_blank"
 
+      - name: "Downloads"
+        icon: "fas fa-download"
+        items:
           - name: "Transmission"
             subtitle: "Torrent client"
             icon: "fas fa-magnet"
