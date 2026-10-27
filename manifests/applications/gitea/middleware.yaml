@@ -1,0 +1,11 @@
+# Strips the /gitea path prefix before forwarding to Gitea. Gitea still builds
+# its links under /gitea because ROOT_URL in app.ini includes the subpath.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: gitea-stripprefix
+  namespace: applications
+spec:
+  stripPrefix:
+    prefixes:
+      - /gitea

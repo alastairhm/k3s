@@ -56,7 +56,7 @@ data:
           - name: "Gitea"
             subtitle: "Git hosting"
             icon: "fas fa-code-branch"
-            url: "http://dell3050.duckdns.org:3333"
+            url: "http://dell3050.duckdns.org/gitea/"
             target: "_blank"
 
           - name: "Woodpecker"
