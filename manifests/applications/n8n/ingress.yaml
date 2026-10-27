@@ -1,0 +1,23 @@
+# Reachable at http://dell3050.duckdns.org/n8n/ (DuckDNS hostname for this
+# host). Multiple apps share the one DuckDNS hostname via path-based routing;
+# see whoami/ingress.yaml for the sibling example on /whoami.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: n8n
+  namespace: applications
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: applications-n8n-stripprefix@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: dell3050.duckdns.org
+      http:
+        paths:
+          - path: /n8n
+            pathType: Prefix
+            backend:
+              service:
+                name: n8n
+                port:
+                  number: 80

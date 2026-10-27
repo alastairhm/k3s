@@ -107,7 +107,7 @@ data:
           - name: "n8n"
             subtitle: "Workflow automation"
             icon: "fas fa-project-diagram"
-            url: "http://dell3050.duckdns.org:5678/home/workflows"
+            url: "http://dell3050.duckdns.org/n8n/home/workflows"
             target: "_blank"
 
       - name: "Experiments"
