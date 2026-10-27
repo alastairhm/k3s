@@ -62,7 +62,7 @@ data:
           - name: "Woodpecker"
             subtitle: "CI/CD"
             icon: "fas fa-dove"
-            url: "http://dell3050.duckdns.org:8888"
+            url: "http://dell3050.duckdns.org/woodpecker/"
             target: "_blank"
 
       - name: "Media"
