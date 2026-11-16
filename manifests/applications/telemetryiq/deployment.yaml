@@ -1,0 +1,78 @@
+# TelemetryIQ (github.com/a1exus/TelemetryIQ): GT7 telemetry recorder and lap analysis.
+# There is no published image, so build it locally and import it into k3s's containerd
+# (see the TelemetryIQ section of README.md). The tag is the upstream commit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemetryiq
+  namespace: applications
+  labels:
+    app: telemetryiq
+spec:
+  replicas: 1
+  # One pod only: it holds hostPort 33740/udp and writes to a single SQLite file.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: telemetryiq
+  template:
+    metadata:
+      labels:
+        app: telemetryiq
+    spec:
+      containers:
+        - name: telemetryiq
+          image: docker.io/library/telemetryiq:89ae54b
+          imagePullPolicy: Never
+          env:
+            # Required in a pod: broadcast auto-discovery can't leave the pod network.
+            - name: PS_IP
+              value: "192.168.3.62"
+            - name: GT7_HEARTBEAT_TYPE
+              value: "B"
+            - name: DB_PATH
+              value: /data/telemetry.db
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            # GT7 sends telemetry to <sender IP>:33740. The heartbeat leaves SNATed as the
+            # node IP, so the replies arrive at the node and hostPort forwards them to the pod.
+            - name: telemetry
+              containerPort: 33740
+              hostPort: 33740
+              protocol: UDP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            # Patched upstream files (see configmap-patches.yaml).
+            - name: patches
+              mountPath: /app/rexy/static/compare.html
+              subPath: compare.html
+              readOnly: true
+            - name: patches
+              mountPath: /app/rexy/server.py
+              subPath: server.py
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /sessions
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: telemetryiq-data
+        - name: patches
+          configMap:
+            name: telemetryiq-patches

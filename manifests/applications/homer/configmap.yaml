@@ -110,6 +110,21 @@ data:
             url: "http://dell3050.duckdns.org/n8n/home/workflows"
             target: "_blank"
 
+      - name: "Gaming"
+        icon: "fas fa-flag-checkered"
+        items:
+          - name: "TelemetryIQ"
+            subtitle: "GT7 live HUD (LAN only)"
+            icon: "fas fa-tachometer-alt"
+            url: "http://192.168.3.43:30082/"
+            target: "_blank"
+
+          - name: "TelemetryIQ Compare"
+            subtitle: "GT7 lap analysis (LAN only)"
+            icon: "fas fa-chart-line"
+            url: "http://192.168.3.43:30082/compare"
+            target: "_blank"
+
       - name: "Experiments"
         icon: "fas fa-flask"
         items:

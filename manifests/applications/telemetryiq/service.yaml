@@ -1,0 +1,16 @@
+# LAN-only on purpose: TelemetryIQ has no auth, and its UI uses absolute paths (/ws,
+# /compare, /sessions), so it can't sit behind a /telemetryiq strip-prefix Ingress anyway.
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemetryiq
+  namespace: applications
+spec:
+  selector:
+    app: telemetryiq
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      nodePort: 30082
+  type: NodePort
