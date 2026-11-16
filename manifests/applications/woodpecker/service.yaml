@@ -1,0 +1,29 @@
+# Woodpecker runs as a Docker container (~/gitrp/cicd), not in k3s. This
+# selector-less Service plus the EndpointSlice below point Traefik at the
+# container's published host port (192.168.3.43:8888).
+apiVersion: v1
+kind: Service
+metadata:
+  name: woodpecker
+  namespace: applications
+spec:
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8888
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: woodpecker-1
+  namespace: applications
+  labels:
+    kubernetes.io/service-name: woodpecker
+addressType: IPv4
+ports:
+  - name: http
+    port: 8888
+    protocol: TCP
+endpoints:
+  - addresses:
+      - 192.168.3.43

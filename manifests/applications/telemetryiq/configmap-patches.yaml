@@ -1,0 +1,1209 @@
+# Patched copies of two upstream TelemetryIQ files (commit 89ae54b), mounted over the image's
+# copies by deployment.yaml. Each patch is marked "k3s patch" in the file.
+#   compare.html: initTabs() was called before `const charts` was declared, which threw a
+#                 ReferenceError and left /compare empty. Now called at the end of the script.
+#   server.py:    one stalled WebSocket client (e.g. a sleeping phone) blocked the broadcaster
+#                 and froze the live HUD for everyone. Sends now time out after 1s and the
+#                 client is dropped.
+# Regenerate: kubectl create configmap telemetryiq-patches -n applications \
+#   --from-file=compare.html --from-file=server.py --dry-run=client -o yaml
+apiVersion: v1
+data:
+  compare.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TelemetryIQ — Analysis</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'Courier New', monospace; background: #0d0d0d;
+             color: #e0e0e0; font-size: 14px; height: 100vh;
+             display: flex; flex-direction: column; overflow: hidden; }
+
+      #topbar { display: flex; align-items: center; gap: 1rem;
+                padding: 0.5rem 1rem; border-bottom: 1px solid #222; flex-shrink: 0; }
+      #topbar h1 { font-size: 0.85rem; color: #555; letter-spacing: 0.1em; }
+      #topbar a  { font-size: 0.75rem; color: #4af; text-decoration: none; }
+      #topbar a:hover { color: #8cf; }
+
+      #main { display: flex; flex: 1; min-height: 0; }
+
+      /* sidebar */
+      #sidebar { width: 220px; flex-shrink: 0; border-right: 1px solid #222;
+                 overflow-y: auto; padding: 0.5rem; }
+      .session-item  { border-bottom: 1px solid #1a1a1a; }
+      .session-hdr   { cursor: pointer; user-select: none; padding: 0.45rem 0.5rem;
+                       line-height: 1.4; }
+      .session-hdr:hover { background: #181818; }
+      .session-arrow { color: #555; font-size: 0.75rem; margin-right: 0.25rem; }
+      .session-track { font-size: 0.8rem; font-weight: bold; }
+      .session-date  { float: right; color: #555; font-size: 0.7rem; }
+      .session-meta  { font-size: 0.65rem; color: #555; margin-top: 0.1rem; }
+      .session-laps  { display: none; }
+      .session-laps.open { display: block; }
+      .lap-row       { display: flex; align-items: center; gap: 0.3rem;
+                       padding: 0.25rem 0.5rem; font-size: 0.72rem; cursor: pointer;
+                       border-left: 3px solid transparent; }
+      .lap-row:hover { background: #141414; }
+      .lap-row.selected { background: #1a1a1a; }
+      .lap-row.baseline { background: #1a1a10; }
+      .lap-color     { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+      .lap-num-col   { width: 3rem; color: #555; }
+      .lap-time-col  { width: 5.5rem; font-weight: bold; }
+      .lap-delta-col { color: #888; font-size: 0.65rem; }
+      .lap-star      { color: #fa4; }
+      .lap-export    { margin-left: auto; color: #555; font-size: 0.6rem;
+                       text-decoration: none; padding: 0 0.3rem;
+                       letter-spacing: 0.05em; text-transform: uppercase; }
+      .lap-export:hover { color: #4af; }
+      #sidebar-msg  { color: #555; font-size: 0.8rem; padding: 0.5rem; }
+
+      /* session notes in sidebar */
+      .session-notes { font-size: 0.65rem; color: #aaa; margin-top: 0.15rem;
+                       padding-left: 1rem; cursor: default; }
+      .session-notes-empty { font-size: 0.65rem; color: #444; margin-top: 0.15rem;
+                             padding-left: 1rem; cursor: pointer; font-style: italic; }
+      .session-notes-input { font-size: 0.65rem; background: #1a1a1a; color: #e0e0e0;
+                             border: 1px solid #333; border-radius: 3px;
+                             padding: 0.15rem 0.3rem; width: calc(100% - 1rem);
+                             margin-top: 0.15rem; margin-left: 1rem;
+                             font-family: 'Courier New', monospace; outline: none; }
+      .session-notes-input:focus { border-color: #4af; }
+      .session-notes a { color: #4af; text-decoration: none; font-size: 0.6rem; margin-left: 0.3rem; }
+      .session-notes a:hover { color: #8cf; }
+      .session-notes-empty a { color: #4af; text-decoration: none; }
+      .session-notes-empty a:hover { color: #8cf; }
+
+      /* filters */
+      #filters { display: flex; gap: 0.4rem; padding: 0.4rem 0.3rem;
+                 border-bottom: 1px solid #222; }
+      #filters select { flex: 1; background: #1a1a1a; color: #ccc; border: 1px solid #333;
+                        border-radius: 3px; padding: 0.2rem 0.3rem; font-size: 0.7rem;
+                        font-family: 'Courier New', monospace; outline: none; }
+      #filters select:focus { border-color: #4af; }
+
+      /* compare header */
+      #compare-hdr { display: none; font-size: 0.7rem; padding: 0.4rem 0.6rem;
+                     background: #111; border: 1px solid #1e1e1e; border-radius: 4px; }
+      .hdr-session { margin-bottom: 0.2rem; }
+      .hdr-session-notes { color: #aaa; }
+      .hdr-session-notes.dimmed { color: #444; font-style: italic; }
+
+      /* setup diff banner */
+      #setup-diff { display: none; font-size: 0.7rem; padding: 0.4rem 0.6rem;
+                    background: #1a1a10; border: 1px solid #333; border-radius: 4px;
+                    color: #fa4; }
+
+      /* content */
+      #content { flex: 1; overflow-y: auto; padding: 0.75rem;
+                 display: flex; flex-direction: column; gap: 0.75rem; min-width: 0; }
+
+      #legend { display: none; gap: 0.75rem; font-size: 0.7rem; flex-shrink: 0;
+                padding: 0.4rem 0.6rem; background: #111;
+                border: 1px solid #1e1e1e; border-radius: 4px; align-items: center;
+                flex-wrap: wrap; }
+      .leg-item { display: flex; align-items: center; gap: 0.3rem; }
+      .leg-dot { width: 8px; height: 8px; border-radius: 50%;
+                 display: inline-block; }
+      #leg-hint { color: #555; margin-left: auto; font-style: italic; font-size: 0.65rem; }
+
+      .chart-wrap { background: #111; border: 1px solid #1e1e1e;
+                    border-radius: 4px; padding: 0.5rem; }
+      .chart-lbl  { font-size: 0.65rem; text-transform: uppercase;
+                    letter-spacing: 0.1em; color: #555; margin-bottom: 0.35rem; }
+
+      #map-wrap { background: #111; border: 1px solid #1e1e1e;
+                  border-radius: 4px; padding: 0.5rem; flex-shrink: 0; }
+      #map-canvas { display: block; background: #0a0a0a; border-radius: 3px;
+                    width: 100%; height: auto; }
+
+      /* tabs */
+      #tabnav { display: none; gap: 0.25rem; flex-shrink: 0; padding: 0; margin: 0;
+                border-bottom: 1px solid #222; }
+      #tabnav.visible { display: flex; }
+      .tab-btn { background: transparent; color: #777; border: 0;
+                 border-bottom: 2px solid transparent;
+                 padding: 0.5rem 1rem; font-family: inherit; font-size: 0.75rem;
+                 letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; }
+      .tab-btn:hover { color: #ccc; }
+      .tab-btn.active { color: #4af; border-bottom-color: #4af; }
+      .tab-panel { display: none; flex-direction: column; gap: 0.75rem; flex: 1; min-width: 0; }
+      .tab-panel.active { display: flex; }
+
+      /* Tab 1 desktop layout: track map beside stacked traces.
+         Rows are content-sized; the canvas keeps its 1.6:1 aspect ratio
+         instead of trying to stretch (drawTrackMap reads the buffer
+         dimensions, not CSS layout size, so flex-stretching it would
+         distort rather than fill). */
+      @media (min-width: 1024px) {
+        #tab-line.active {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          grid-template-rows: auto auto;
+          gap: 0.75rem;
+          align-items: start;
+        }
+        #tab-line #map-wrap         { grid-column: 1; grid-row: 1 / span 2; }
+        #tab-line #wrap-speed-line  { grid-column: 2; grid-row: 1; }
+        #tab-line #wrap-delta-line  { grid-column: 2; grid-row: 2; }
+      }
+
+      #placeholder { color: #444; font-size: 0.9rem; padding: 2rem; text-align: center; }
+    </style>
+    </head>
+    <body>
+
+    <div id="topbar">
+      <h1>TelemetryIQ — Analysis</h1>
+      <a href="/">&#8592; Live</a>
+    </div>
+
+    <div id="main">
+      <aside id="sidebar"><p id="sidebar-msg">Loading&#8230;</p></aside>
+      <main id="content">
+        <p id="placeholder">Expand a session to overlay its laps.</p>
+
+        <nav id="tabnav" role="tablist">
+          <button class="tab-btn active" data-tab="line"      id="tabbtn-line"       role="tab" aria-selected="true"  aria-controls="tab-line">Driving Line</button>
+          <button class="tab-btn"        data-tab="inputs"    id="tabbtn-inputs"     role="tab" aria-selected="false" aria-controls="tab-inputs">Inputs</button>
+          <button class="tab-btn"        data-tab="powertrain" id="tabbtn-powertrain" role="tab" aria-selected="false" aria-controls="tab-powertrain">Powertrain</button>
+        </nav>
+
+        <div id="legend"></div>
+        <div id="compare-hdr"></div>
+        <div id="setup-diff"></div>
+
+        <section class="tab-panel active" id="tab-line" role="tabpanel" aria-labelledby="tabbtn-line">
+          <div class="chart-wrap" id="wrap-speed-line"><p class="chart-lbl">Speed (km/h) &#8212; x: distance (m)</p>
+            <canvas id="ch-speed" height="80"></canvas></div>
+          <div class="chart-wrap" id="wrap-delta-line"><p class="chart-lbl">Time Delta &#8212; vs best selected (s)</p>
+            <canvas id="ch-delta" height="60"></canvas></div>
+          <div id="map-wrap">
+            <p class="chart-lbl">Track Map &#8212; speed colormap (blue=slow &#8594; red=fast)</p>
+            <canvas id="map-canvas" width="800" height="500"></canvas>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="tab-inputs" role="tabpanel" aria-labelledby="tabbtn-inputs">
+          <div class="chart-wrap"><p class="chart-lbl">Throttle (%) &#8212; x: distance (m)</p>
+            <canvas id="ch-throttle" height="60"></canvas></div>
+          <div class="chart-wrap"><p class="chart-lbl">Brake (%) &#8212; x: distance (m)</p>
+            <canvas id="ch-brake" height="60"></canvas></div>
+          <div class="chart-wrap"><p class="chart-lbl">Lateral accel &#8212; sway, m/s&#178; (Heartbeat B only)</p>
+            <canvas id="ch-sway" height="50"></canvas></div>
+          <div class="chart-wrap"><p class="chart-lbl">Steering (rad, Heartbeat B only)</p>
+            <canvas id="ch-steer" height="50"></canvas></div>
+        </section>
+
+        <section class="tab-panel" id="tab-powertrain" role="tabpanel" aria-labelledby="tabbtn-powertrain">
+          <div class="chart-wrap"><p class="chart-lbl">Speed (km/h) &#8212; x: distance (m)</p>
+            <canvas id="ch-speed-pwr" height="80"></canvas></div>
+          <div class="chart-wrap"><p class="chart-lbl">Engine RPM &#8212; x: distance (m)</p>
+            <canvas id="ch-rpm" height="60"></canvas></div>
+          <div class="chart-wrap"><p class="chart-lbl">Gear &#8212; x: distance (m)</p>
+            <canvas id="ch-gear" height="50"></canvas></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script>
+    'use strict';
+
+    // ── Tab routing ──────────────────────────────────────────────────────────────
+    const TAB_IDS = ['line', 'inputs', 'powertrain'];
+
+    function readTabFromHash() {
+      const m = window.location.hash.match(/tab=([a-z]+)/);
+      const t = m && m[1];
+      return TAB_IDS.includes(t) ? t : 'line';
+    }
+
+    function activateTab(tabId) {
+      if (!TAB_IDS.includes(tabId)) tabId = 'line';
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        const isActive = b.dataset.tab === tabId;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-selected', String(isActive));
+      });
+      document.querySelectorAll('.tab-panel').forEach(p => {
+        p.classList.toggle('active', p.id === 'tab-' + tabId);
+      });
+      const newHash = '#tab=' + tabId;
+      if (window.location.hash !== newHash) {
+        history.replaceState(null, '', newHash);
+      }
+      // Force visible charts to recompute their canvas size, then rebind crosshair
+      Object.values(charts).forEach(ch => { try { ch.resize(); } catch (e) {} });
+      setTimeout(attachCrosshair, 0);
+    }
+
+    function initTabs() {
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+      });
+      window.addEventListener('hashchange', () => activateTab(readTabFromHash()));
+      activateTab(readTabFromHash());
+    }
+
+
+    // Color palette — distinct, colorblind-friendly-ish
+    const COLORS = ['#4af','#fa4','#4f4','#f4a','#a4f','#ff4','#4ff','#f44','#8f8','#f88'];
+    const charts = {};
+
+    // ── State ────────────────────────────────────────────────────────────────────
+    // selected: Map<lapId, { id, lap_number, car_code, lap_time_ms, frames, color, label }>
+    const state = {
+      selected: new Map(),
+      baselineId: null,   // lap id of the baseline/reference lap
+      frameCache: {},
+      sessions: [], cars: {}, tracks: {},
+      lapCache: new Map(),
+      colorIdx: 0,
+      filterTrack: null,
+      filterCar: null,
+    };
+
+    function nextColor() {
+      const c = COLORS[state.colorIdx % COLORS.length];
+      state.colorIdx++;
+      return c;
+    }
+
+    // ── Formatting ───────────────────────────────────────────────────────────────
+    function fmtMs(ms) {
+      if (ms == null || ms === -1) return '--:--.---';
+      const t = Math.max(0, ms | 0);
+      const m = (t / 60000) | 0;
+      const s = ((t % 60000) / 1000) | 0;
+      const f = t % 1000;
+      return m + ':' + String(s).padStart(2,'0') + '.' + String(f).padStart(3,'0');
+    }
+
+    function fmtDelta(deltaMs) {
+      if (deltaMs === 0) return '\u2605';
+      const sign = deltaMs > 0 ? '+' : '\u2212';
+      return sign + (Math.abs(deltaMs) / 1000).toFixed(3) + 's';
+    }
+
+    function fmtDate(unix) {
+      const d = new Date(unix * 1000);
+      return d.toISOString().slice(0, 16).replace('T', ' ');
+    }
+
+    // ── Data fetching ────────────────────────────────────────────────────────────
+    async function fetchSessionLaps(sessionId) {
+      if (state.lapCache.has(sessionId)) return state.lapCache.get(sessionId);
+      const laps = await fetch('/sessions/' + sessionId + '/laps').then(r => r.json());
+      state.lapCache.set(sessionId, laps);
+      return laps;
+    }
+
+    async function fetchFrames(lap) {
+      if (state.frameCache[lap.id]) return state.frameCache[lap.id];
+      const frames = await fetch('/laps/' + lap.car_code + '/' + lap.lap_number + '/' + lap.id + '/frames').then(r => r.json());
+      state.frameCache[lap.id] = frames;
+      return frames;
+    }
+
+    // ── Lap selection ────────────────────────────────────────────────────────────
+    async function toggleLap(lap) {
+      if (state.selected.has(lap.id)) {
+        state.selected.delete(lap.id);
+      } else {
+        const frames = await fetchFrames(lap);
+        state.selected.set(lap.id, {
+          id: lap.id,
+          lap_number: lap.lap_number,
+          lap_time_ms: lap.lap_time_ms,
+          frames,
+          color: nextColor(),
+          label: 'Lap ' + lap.lap_number + ' (' + fmtMs(lap.lap_time_ms) + ')',
+          session_id: lap.session_id,
+          session_notes: lap.session_notes,
+        });
+      }
+      updateLapRowStates();
+      renderAll();
+    }
+
+    async function selectAllLaps(session) {
+      const laps = await fetchSessionLaps(session.id);
+      const frameSets = await Promise.all(
+        laps.map(lap => fetchFrames(Object.assign({}, lap, { car_code: session.car_code })))
+      );
+      let bestId = null, bestTime = Infinity;
+      laps.forEach((lap, i) => {
+        if (!state.selected.has(lap.id)) {
+          state.selected.set(lap.id, {
+            id: lap.id,
+            lap_number: lap.lap_number,
+            lap_time_ms: lap.lap_time_ms,
+            frames: frameSets[i],
+            color: nextColor(),
+            label: 'Lap ' + lap.lap_number + ' (' + fmtMs(lap.lap_time_ms) + ')',
+            session_id: session.id,
+            session_notes: session.notes || null,
+          });
+        }
+        if (lap.lap_time_ms != null && lap.lap_time_ms < bestTime) {
+          bestTime = lap.lap_time_ms;
+          bestId = lap.id;
+        }
+      });
+      // Auto-set baseline to best lap if not already set
+      if (state.baselineId == null && bestId != null) state.baselineId = bestId;
+      updateLapRowStates();
+      renderAll();
+    }
+
+    function deselectAllLaps(session) {
+      const laps = state.lapCache.get(session.id) || [];
+      laps.forEach(lap => state.selected.delete(lap.id));
+      updateLapRowStates();
+      renderAll();
+    }
+
+    function setBaseline(lapId) {
+      state.baselineId = (state.baselineId === lapId) ? null : lapId;
+      updateLapRowStates();
+      renderAll();
+    }
+
+    function updateLapRowStates() {
+      document.querySelectorAll('.lap-row').forEach(row => {
+        const lapId = Number(row.dataset.lapId);
+        const entry = state.selected.get(lapId);
+        const isBase = lapId === state.baselineId;
+        row.classList.toggle('selected', !!entry);
+        row.classList.toggle('baseline', isBase);
+        row.style.borderLeftColor = entry ? entry.color : 'transparent';
+        const dot = row.querySelector('.lap-color');
+        if (dot) {
+          dot.style.background = entry ? entry.color : '#333';
+          dot.style.outline = isBase ? '2px solid #fff' : 'none';
+        }
+        const baseTag = row.querySelector('.base-tag');
+        if (isBase && !baseTag) {
+          const tag = document.createElement('span');
+          tag.className = 'base-tag';
+          tag.textContent = 'REF';
+          tag.style.cssText = 'font-size:0.55rem;color:#fa4;font-weight:bold;margin-left:auto;letter-spacing:0.05em';
+          row.appendChild(tag);
+        } else if (!isBase && baseTag) {
+          baseTag.remove();
+        }
+      });
+    }
+
+    // ── Sidebar ──────────────────────────────────────────────────────────────────
+    async function populateLaps(lapsDiv, session) {
+      const laps = await fetchSessionLaps(session.id);
+      while (lapsDiv.firstChild) lapsDiv.removeChild(lapsDiv.firstChild);
+      if (!laps.length) {
+        const msg = document.createElement('p');
+        msg.style.cssText = 'color:#555;font-size:0.7rem;padding:0.3rem 0.5rem';
+        msg.textContent = 'No complete laps';
+        lapsDiv.appendChild(msg);
+        return;
+      }
+      const best = session.best_lap_time_ms;
+      laps.forEach(lap => {
+        const lapWithCar = Object.assign({}, lap, {
+          car_code: session.car_code,
+          session_id: session.id,
+          session_notes: session.notes || null,
+        });
+        const isBest = lap.lap_time_ms === best;
+        const entry = state.selected.get(lap.id);
+
+        const row = document.createElement('div');
+        row.className = 'lap-row' + (entry ? ' selected' : '');
+        row.dataset.lapId = String(lap.id);
+        row.style.borderLeftColor = entry ? entry.color : 'transparent';
+
+        const dot = document.createElement('span');
+        dot.className = 'lap-color';
+        dot.style.background = entry ? entry.color : '#333';
+
+        const numEl = document.createElement('span');
+        numEl.className = 'lap-num-col';
+        numEl.textContent = 'Lap ' + lap.lap_number;
+
+        const timeEl = document.createElement('span');
+        timeEl.className = 'lap-time-col';
+        timeEl.style.color = entry ? entry.color : '#4af';
+        timeEl.textContent = fmtMs(lap.lap_time_ms);
+
+        const deltaEl = document.createElement('span');
+        deltaEl.className = 'lap-delta-col' + (isBest ? ' lap-star' : '');
+        deltaEl.textContent = fmtDelta(lap.lap_time_ms - best);
+
+        const exportEl = document.createElement('a');
+        exportEl.className = 'lap-export';
+        exportEl.href = '/laps/' + session.car_code + '/' + lap.lap_number + '/' + lap.id + '/export.csv';
+        exportEl.setAttribute('download', '');
+        exportEl.title = 'Download lap as CSV';
+        exportEl.textContent = 'csv';
+        exportEl.addEventListener('click', e => e.stopPropagation());
+
+        row.appendChild(dot);
+        row.appendChild(numEl);
+        row.appendChild(timeEl);
+        row.appendChild(deltaEl);
+        row.appendChild(exportEl);
+
+        row.addEventListener('click', () => toggleLap(lapWithCar));
+        row.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          if (state.selected.has(lap.id)) setBaseline(lap.id);
+        });
+        row.title = 'Click to toggle \u00b7 Right-click to set as reference';
+        lapsDiv.appendChild(row);
+      });
+    }
+
+    function renderSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      while (sidebar.firstChild) sidebar.removeChild(sidebar.firstChild);
+
+      if (!state.sessions.length) {
+        const msg = document.createElement('p');
+        msg.id = 'sidebar-msg';
+        msg.textContent = 'No sessions yet.';
+        sidebar.appendChild(msg);
+        return;
+      }
+
+      // ── Filter dropdowns (Task 7) ──────────────────────────────────────────────
+      const filtersDiv = document.createElement('div');
+      filtersDiv.id = 'filters';
+
+      const trackSelect = document.createElement('select');
+      const allTracksOpt = document.createElement('option');
+      allTracksOpt.value = '';
+      allTracksOpt.textContent = 'All tracks';
+      trackSelect.appendChild(allTracksOpt);
+      const uniqueTracks = [...new Set(state.sessions.map(s => s.track_id).filter(v => v != null))];
+      uniqueTracks.map(tid => ({ id: tid, name: state.tracks[String(tid)] || 'Track ' + tid }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = String(t.id);
+          opt.textContent = t.name;
+          if (state.filterTrack != null && String(state.filterTrack) === String(t.id)) opt.selected = true;
+          trackSelect.appendChild(opt);
+        });
+      trackSelect.addEventListener('change', () => {
+        state.filterTrack = trackSelect.value ? Number(trackSelect.value) : null;
+        applyFilters();
+      });
+
+      const carSelect = document.createElement('select');
+      const allCarsOpt = document.createElement('option');
+      allCarsOpt.value = '';
+      allCarsOpt.textContent = 'All cars';
+      carSelect.appendChild(allCarsOpt);
+      const uniqueCars = [...new Set(state.sessions.map(s => s.car_code).filter(v => v != null))];
+      uniqueCars.map(cc => ({ code: cc, name: state.cars[String(cc)] || 'Car ' + cc }))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = String(c.code);
+          opt.textContent = c.name;
+          if (state.filterCar != null && String(state.filterCar) === String(c.code)) opt.selected = true;
+          carSelect.appendChild(opt);
+        });
+      carSelect.addEventListener('change', () => {
+        state.filterCar = carSelect.value ? Number(carSelect.value) : null;
+        applyFilters();
+      });
+
+      filtersDiv.appendChild(trackSelect);
+      filtersDiv.appendChild(carSelect);
+      sidebar.appendChild(filtersDiv);
+
+      // ── Session list ──────────────────────────────────────────────────────────
+      state.sessions.forEach((session, idx) => {
+        const trackName = session.track_id != null
+          ? (state.tracks[String(session.track_id)] || 'Track ' + session.track_id)
+          : 'Unknown Track';
+        const carName = session.car_code != null
+          ? (state.cars[String(session.car_code)] || 'Car ' + session.car_code)
+          : 'Unknown Car';
+        const lapWord = session.lap_count !== 1 ? ' laps' : ' lap';
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'session-item';
+        if (session.track_id != null) wrapper.dataset.trackId = String(session.track_id);
+        if (session.car_code != null) wrapper.dataset.carCode = String(session.car_code);
+
+        const hdr = document.createElement('div');
+        hdr.className = 'session-hdr';
+
+        const line1 = document.createElement('div');
+        const arrowEl = document.createElement('span');
+        arrowEl.className = 'session-arrow';
+        arrowEl.textContent = idx === 0 ? '\u25bc' : '\u25b6';
+        const trackEl = document.createElement('span');
+        trackEl.className = 'session-track';
+        trackEl.textContent = trackName;
+        const dateEl = document.createElement('span');
+        dateEl.className = 'session-date';
+        dateEl.textContent = fmtDate(session.started_at);
+        line1.appendChild(arrowEl);
+        line1.appendChild(trackEl);
+        line1.appendChild(dateEl);
+
+        const metaEl = document.createElement('div');
+        metaEl.className = 'session-meta';
+        metaEl.textContent = carName + ' \u00b7 ' + session.lap_count + lapWord + ' \u00b7 best ' + fmtMs(session.best_lap_time_ms);
+
+        hdr.appendChild(line1);
+        hdr.appendChild(metaEl);
+
+        // Session notes (Task 6)
+        const notesEl = createNotesEl(session);
+        hdr.appendChild(notesEl);
+
+        const lapsDiv = document.createElement('div');
+        lapsDiv.className = 'session-laps' + (idx === 0 ? ' open' : '');
+
+        hdr.addEventListener('click', async (e) => {
+          // Don't toggle session if clicking on notes edit controls
+          if (e.target.closest('.session-notes, .session-notes-empty, .session-notes-input')) return;
+          const open = lapsDiv.classList.toggle('open');
+          arrowEl.textContent = open ? '\u25bc' : '\u25b6';
+          if (open && !lapsDiv.children.length) {
+            await populateLaps(lapsDiv, session);
+            // Auto-select all laps when expanding
+            await selectAllLaps(session);
+          }
+        });
+
+        wrapper.appendChild(hdr);
+        wrapper.appendChild(lapsDiv);
+        sidebar.appendChild(wrapper);
+
+        // Auto-expand and select most recent session
+        if (idx === 0) {
+          populateLaps(lapsDiv, session).then(() => selectAllLaps(session));
+        }
+      });
+
+      applyFilters();
+    }
+
+    async function loadSidebar() {
+      const [sessionsRes, carsRes, tracksRes] = await Promise.all([
+        fetch('/sessions'),
+        fetch('/static/cars.json'),
+        fetch('/static/tracks.json'),
+      ]);
+      state.sessions = await sessionsRes.json();
+      state.cars     = await carsRes.json();
+      state.tracks   = await tracksRes.json();
+      renderSidebar();
+    }
+
+    loadSidebar();
+
+    // ── Chart helpers ────────────────────────────────────────────────────────────
+    const CHART_DEFS = [
+      { id: 'ch-speed',     fn: f => f.speed_mps * 3.6,        yLbl: 'km/h' },
+      { id: 'ch-speed-pwr', fn: f => f.speed_mps * 3.6,        yLbl: 'km/h' },
+      { id: 'ch-rpm',       fn: f => f.engine_rpm,              yLbl: 'rpm'  },
+      { id: 'ch-throttle',  fn: f => f.throttle / 255 * 100,   yLbl: '%'    },
+      { id: 'ch-brake',     fn: f => f.brake    / 255 * 100,   yLbl: '%'    },
+      { id: 'ch-gear',      fn: f => f.current_gear,            yLbl: ''     },
+      { id: 'ch-sway',      fn: f => f.sway,                    yLbl: 'm/s\u00b2' },
+      { id: 'ch-steer',     fn: f => f.wheel_rotation_radians,  yLbl: 'rad'  },
+    ];
+
+    const BASE_OPTS = (yLbl) => ({
+      responsive: true, maintainAspectRatio: true, animation: false,
+      plugins: {
+        legend: { display: false },
+        zoom: {
+          zoom: { wheel: { enabled: true }, pinch: { enabled: true }, mode: 'x' },
+          pan:  { enabled: true, mode: 'x' },
+        },
+      },
+      scales: {
+        x: { type: 'linear', title: { display: true, text: 'distance (m)', color: '#444' },
+             grid: { color: '#1e1e1e' }, ticks: { color: '#555', maxTicksLimit: 8 } },
+        y: { title: { display: !!yLbl, text: yLbl, color: '#555' },
+             grid: { color: '#1e1e1e' }, ticks: { color: '#555' } },
+      },
+      elements: { point: { radius: 0 }, line: { borderWidth: 1.5, tension: 0 } },
+    });
+
+    function mkDataset(frames, fn, color, label, isBaseline) {
+      return {
+        label,
+        data: frames.map(f => ({ x: f.distance_m, y: fn(f) })),
+        borderColor: color,
+        borderWidth: isBaseline ? 2.5 : 1.5,
+        borderDash: isBaseline ? [6, 3] : [],
+        fill: false,
+        spanGaps: false,
+      };
+    }
+
+    function updateTraceCharts() {
+      // Render baseline last so it draws on top
+      const entries = [...state.selected.values()];
+      const sorted = entries.sort((a, b) =>
+        (a.id === state.baselineId ? 1 : 0) - (b.id === state.baselineId ? 1 : 0)
+      );
+      CHART_DEFS.forEach(def => {
+        if (charts[def.id]) { charts[def.id].destroy(); }
+        charts[def.id] = new Chart(document.getElementById(def.id), {
+          type: 'line',
+          data: { datasets: sorted.map(e =>
+            mkDataset(e.frames, def.fn, e.color, e.label, e.id === state.baselineId)
+          )},
+          options: BASE_OPTS(def.yLbl),
+        });
+      });
+    }
+
+    // ── Time delta (vs best selected lap) ────────────────────────────────────────
+    function lerp(frames, targetDist) {
+      if (!frames.length) return 0;
+      if (targetDist >= frames[frames.length - 1].distance_m) return frames[frames.length - 1].ts;
+      if (targetDist <= frames[0].distance_m) return frames[0].ts;
+      let lo = 0, hi = frames.length - 1;
+      while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1;
+        if (frames[mid].distance_m <= targetDist) lo = mid; else hi = mid;
+      }
+      const a = frames[lo], b = frames[hi];
+      if (a.distance_m === b.distance_m) return a.ts;
+      const t = (targetDist - a.distance_m) / (b.distance_m - a.distance_m);
+      return a.ts + t * (b.ts - a.ts);
+    }
+
+    function updateDeltaChart() {
+      if (charts['ch-delta']) { charts['ch-delta'].destroy(); delete charts['ch-delta']; }
+      const entries = [...state.selected.values()];
+      if (entries.length < 2) return;
+
+      // Use baseline as reference; fall back to fastest lap
+      let best = state.baselineId != null ? state.selected.get(state.baselineId) : null;
+      if (!best) {
+        best = entries.reduce((b, e) =>
+          (e.lap_time_ms != null && (b.lap_time_ms == null || e.lap_time_ms < b.lap_time_ms)) ? e : b
+        , entries[0]);
+      }
+
+      const datasets = [];
+      for (const e of entries) {
+        if (e.id === best.id) continue;
+        if (!e.frames.length || !best.frames.length) continue;
+
+        const maxDist = Math.min(
+          e.frames[e.frames.length - 1].distance_m,
+          best.frames[best.frames.length - 1].distance_m
+        );
+        const t0E = e.frames[0].ts, t0B = best.frames[0].ts;
+        const pts = [];
+        for (const f of e.frames) {
+          if (f.distance_m > maxDist) break;
+          const delta = (f.ts - t0E) - (lerp(best.frames, f.distance_m) - t0B);
+          pts.push({ x: f.distance_m, y: parseFloat(delta.toFixed(3)) });
+        }
+        datasets.push({
+          data: pts,
+          borderColor: e.color,
+          label: e.label + ' vs best',
+          fill: false,
+          tension: 0, borderWidth: 1.5, pointRadius: 0,
+        });
+      }
+
+      if (!datasets.length) return;
+
+      charts['ch-delta'] = new Chart(document.getElementById('ch-delta'), {
+        type: 'line',
+        data: { datasets },
+        options: BASE_OPTS('s'),
+      });
+    }
+
+    // ── Track map ────────────────────────────────────────────────────────────────
+    function drawTrackMap() {
+      const canvas = document.getElementById('map-canvas');
+      const ctx    = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const entries = [...state.selected.values()];
+      const allF = entries.flatMap(e => e.frames);
+      const xs   = allF.map(f => f.position_x).filter(v => v != null);
+      const zs   = allF.map(f => f.position_z).filter(v => v != null);
+      if (!xs.length) return;
+
+      const pad  = 24;
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+      const sc   = Math.min((W - pad*2) / (maxX - minX || 1),
+                            (H - pad*2) / (maxZ - minZ || 1));
+      const offX = pad + (W - pad*2 - (maxX - minX) * sc) / 2;
+      const offZ = pad + (H - pad*2 - (maxZ - minZ) * sc) / 2;
+      const proj = (x, z) => [offX + (x - minX) * sc, offZ + (z - minZ) * sc];
+
+      const alpha = Math.max(0.3, 1 - (entries.length - 1) * 0.15);
+      entries.forEach(e => {
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = e.color;
+        ctx.lineWidth = 2;
+        for (let i = 1; i < e.frames.length; i++) {
+          const f = e.frames[i], fp = e.frames[i-1];
+          if (f.position_x == null || fp.position_x == null) continue;
+          const [x0,y0] = proj(fp.position_x, fp.position_z);
+          const [x1,y1] = proj(f.position_x, f.position_z);
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+        }
+      });
+      ctx.globalAlpha = 1;
+    }
+
+    // ── Synchronized crosshair ───────────────────────────────────────────────────
+    function attachCrosshair() {
+      Object.values(charts).forEach(ch => {
+        const canvas = ch.canvas;
+        if (canvas._crosshairAttached) return;
+        canvas._crosshairAttached = true;
+        canvas.addEventListener('mousemove', e => {
+          const activePanel = document.querySelector('.tab-panel.active');
+          if (!activePanel || !activePanel.contains(canvas)) return;
+          const sourceChart = Object.values(charts).find(c => c.canvas === canvas);
+          if (!sourceChart || !sourceChart.scales.x) return;
+          const rect = canvas.getBoundingClientRect();
+          const xVal = sourceChart.scales.x.getValueForPixel(e.clientX - rect.left);
+          if (xVal == null) return;
+          Object.values(charts).forEach(target => {
+            if (target === sourceChart || !target.scales.x) return;
+            if (!activePanel.contains(target.canvas)) return;
+            const px = target.scales.x.getPixelForValue(xVal);
+            target.canvas.dispatchEvent(new MouseEvent('mousemove', {
+              clientX: target.canvas.getBoundingClientRect().left + px,
+              clientY: e.clientY, bubbles: true,
+            }));
+          });
+        });
+      });
+    }
+
+    // ── Legend ────────────────────────────────────────────────────────────────────
+    function updateLegend() {
+      const el = document.getElementById('legend');
+      while (el.firstChild) el.removeChild(el.firstChild);
+      const entries = [...state.selected.values()];
+      if (!entries.length) { el.style.display = 'none'; return; }
+      el.style.display = 'flex';
+      entries.forEach(e => {
+        const isBase = e.id === state.baselineId;
+        const item = document.createElement('span');
+        item.className = 'leg-item';
+        const dot = document.createElement('span');
+        dot.className = 'leg-dot';
+        dot.style.background = e.color;
+        if (isBase) dot.style.outline = '2px solid #fff';
+        const lbl = document.createElement('span');
+        lbl.textContent = e.label + (isBase ? ' [REF]' : '');
+        lbl.style.color = e.color;
+        if (isBase) lbl.style.fontWeight = 'bold';
+        item.appendChild(dot);
+        item.appendChild(lbl);
+        el.appendChild(item);
+      });
+      const hint = document.createElement('span');
+      hint.id = 'leg-hint';
+      hint.textContent = 'Scroll to zoom \u00b7 drag to pan \u00b7 click laps to toggle';
+      el.appendChild(hint);
+    }
+
+    // ── Compare header (Task 5) ─────────────────────────────────────────────────
+    function updateCompareHeader() {
+      const el = document.getElementById('compare-hdr');
+      while (el.firstChild) el.removeChild(el.firstChild);
+
+      const entries = [...state.selected.values()];
+      const bySession = new Map();
+      entries.forEach(e => {
+        if (e.session_id == null) return;
+        if (!bySession.has(e.session_id)) bySession.set(e.session_id, []);
+        bySession.get(e.session_id).push(e);
+      });
+
+      if (bySession.size < 2) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+
+      bySession.forEach((laps, sid) => {
+        const row = document.createElement('div');
+        row.className = 'hdr-session';
+        const color = laps[0].color;
+        const bar = document.createElement('span');
+        bar.style.cssText = 'display:inline-block;width:3px;height:0.85em;margin-right:0.4rem;vertical-align:middle;background:' + color;
+        row.appendChild(bar);
+        const notesSpan = document.createElement('span');
+        notesSpan.className = 'hdr-session-notes' + (laps[0].session_notes ? '' : ' dimmed');
+        notesSpan.textContent = laps[0].session_notes || '(no notes)';
+        row.appendChild(notesSpan);
+        el.appendChild(row);
+      });
+    }
+
+    // ── Setup diff banner (Task 4) ──────────────────────────────────────────────
+    function computeSetupDiff() {
+      const el = document.getElementById('setup-diff');
+      while (el.firstChild) el.removeChild(el.firstChild);
+
+      const entries = [...state.selected.values()];
+      const bySession = new Map();
+      entries.forEach(e => {
+        if (e.session_id == null) return;
+        if (!bySession.has(e.session_id)) bySession.set(e.session_id, e);
+      });
+
+      const sessions = [...bySession.values()];
+      if (sessions.length < 2) { el.style.display = 'none'; return; }
+
+      // Extract first frame from each unique session
+      const sessionFrames = sessions.map(e => e.frames[0]).filter(Boolean);
+      if (sessionFrames.length < 2) { el.style.display = 'none'; return; }
+
+      const GEAR_KEYS = ['gear1','gear2','gear3','gear4','gear5','gear6','gear7','gear8'];
+      const diffs = [];
+      const fA = sessionFrames[0];
+
+      for (let s = 1; s < sessionFrames.length; s++) {
+        const fB = sessionFrames[s];
+        GEAR_KEYS.forEach((key, idx) => {
+          const a = fA[key], b = fB[key];
+          if (a == null || b == null) return;
+          if (a === 0 && b === 0) return;
+          if (Math.abs(a - b) > 0.0001) {
+            const label = 'G' + (idx + 1);
+            diffs.push(label + ': ' + a.toFixed(3) + ' \u2192 ' + b.toFixed(3));
+          }
+        });
+        if (fA.trans_top_speed != null && fB.trans_top_speed != null &&
+            Math.round(fA.trans_top_speed) !== Math.round(fB.trans_top_speed)) {
+          diffs.push('Top speed setting: ' + Math.round(fA.trans_top_speed) +
+                     ' \u2192 ' + Math.round(fB.trans_top_speed));
+        }
+        if (fA.calc_max_speed != null && fB.calc_max_speed != null &&
+            Math.round(fA.calc_max_speed) !== Math.round(fB.calc_max_speed)) {
+          diffs.push('Calc max speed: ' + Math.round(fA.calc_max_speed) +
+                     ' \u2192 ' + Math.round(fB.calc_max_speed));
+        }
+      }
+
+      if (!diffs.length) { el.style.display = 'none'; return; }
+      el.style.display = 'block';
+      el.textContent = '\u2699 Auto-detected: ' + diffs.join(', ');
+    }
+
+    // ── Inline notes edit (Task 6) ──────────────────────────────────────────────
+    function startNoteEdit(session, notesEl) {
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'session-notes-input';
+      input.value = session.notes || '';
+      input.placeholder = 'Session notes...';
+
+      const parent = notesEl.parentNode;
+      parent.replaceChild(input, notesEl);
+      input.focus();
+
+      function save() {
+        const val = input.value.trim();
+        fetch('/sessions/' + session.id, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ notes: val || null }),
+        }).then(r => {
+          if (!r.ok) throw new Error('PATCH failed: ' + r.status);
+          session.notes = val || null;
+          // Update selected laps referencing this session
+          state.selected.forEach(entry => {
+            if (entry.session_id === session.id) {
+              entry.session_notes = session.notes;
+            }
+          });
+          // Invalidate lap cache so next render picks up changes
+          rebuildNotesEl();
+          updateCompareHeader();
+        }).catch(err => {
+          console.error('Failed to save notes:', err);
+          rebuildNotesEl();
+        });
+      }
+
+      function rebuildNotesEl() {
+        const newEl = createNotesEl(session);
+        if (input.parentNode) input.parentNode.replaceChild(newEl, input);
+      }
+
+      function cancel() { rebuildNotesEl(); }
+
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); save(); }
+        if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      });
+      input.addEventListener('blur', save);
+    }
+
+    function createNotesEl(session) {
+      const notesEl = document.createElement('div');
+      if (session.notes) {
+        notesEl.className = 'session-notes';
+        const txt = document.createTextNode(session.notes + ' ');
+        notesEl.appendChild(txt);
+        const editLink = document.createElement('a');
+        editLink.href = '#';
+        editLink.textContent = '[edit]';
+        editLink.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); startNoteEdit(session, notesEl); });
+        notesEl.appendChild(editLink);
+      } else {
+        notesEl.className = 'session-notes-empty';
+        const addLink = document.createElement('a');
+        addLink.href = '#';
+        addLink.textContent = '[+ add note]';
+        addLink.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); startNoteEdit(session, notesEl); });
+        notesEl.appendChild(addLink);
+      }
+      return notesEl;
+    }
+
+    // ── Filter sessions (Task 7) ────────────────────────────────────────────────
+    function applyFilters() {
+      document.querySelectorAll('.session-item').forEach(el => {
+        const trackId = el.dataset.trackId;
+        const carCode = el.dataset.carCode;
+        const matchTrack = state.filterTrack == null || trackId === String(state.filterTrack);
+        const matchCar = state.filterCar == null || carCode === String(state.filterCar);
+        el.style.display = (matchTrack && matchCar) ? '' : 'none';
+      });
+    }
+
+    // ── renderAll ────────────────────────────────────────────────────────────────
+    function renderAll() {
+      const ph = document.getElementById('placeholder');
+      if (state.selected.size > 0 && ph) ph.remove();
+      document.getElementById('tabnav').classList.toggle('visible', state.selected.size > 0);
+      updateLegend();
+      updateCompareHeader();
+      computeSetupDiff();
+      updateTraceCharts();
+      updateDeltaChart();
+      drawTrackMap();
+      setTimeout(attachCrosshair, 0);
+    }
+    // k3s patch: initTabs() moved from the top of the script. It reads `charts`, a const
+    // declared after it, so the early call threw a TDZ ReferenceError and stopped the script.
+    initTabs();
+    </script>
+    </body>
+    </html>
+  server.py: |
+    """FastAPI application: WebSocket /ws + static file serving."""
+    from __future__ import annotations
+
+    import asyncio
+    import csv
+    import io
+    from pathlib import Path
+    from typing import TYPE_CHECKING
+
+    from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+    from fastapi.responses import FileResponse, Response
+    from fastapi.staticfiles import StaticFiles
+
+    if TYPE_CHECKING:
+        from rexy.repository import TelemetryRepository
+
+    _repo: "TelemetryRepository | None" = None
+
+
+    def set_repo(repo: "TelemetryRepository | None") -> None:
+        global _repo
+        _repo = repo
+
+
+    def _add_distance(frames: list[dict]) -> list[dict]:
+        """Append distance_m to each frame using wall-clock ts as time base.
+
+        GT7 does not broadcast current_lap_time_ms; ts is set server-side on
+        frame receipt. Frames where dt > 0.1 s (pause, menu, load screen)
+        contribute zero distance to prevent teleportation artefacts.
+        """
+        result = []
+        dist = 0.0
+        prev_ts: float | None = None
+        for f in frames:
+            ts = f.get("ts")
+            if prev_ts is not None and ts is not None:
+                dt = ts - prev_ts
+                if 0.0 < dt < 0.1:
+                    dist += (f.get("speed_mps") or 0.0) * dt
+            prev_ts = ts
+            result.append({**f, "distance_m": round(dist, 2)})
+        return result
+
+
+    app = FastAPI()
+    clients: set[WebSocket] = set()
+
+    _STATIC = Path(__file__).parent / "static"
+
+
+    @app.get("/")
+    async def index() -> FileResponse:
+        return FileResponse(_STATIC / "index.html")
+
+
+    app.mount("/static", StaticFiles(directory=_STATIC), name="static")
+
+
+    @app.websocket("/ws")
+    async def ws_endpoint(websocket: WebSocket) -> None:
+        await websocket.accept()
+        clients.add(websocket)
+        try:
+            while True:
+                await websocket.receive_text()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            clients.discard(websocket)
+
+
+    @app.get("/laps")
+    async def get_laps():
+        from fastapi import HTTPException
+        if _repo is None:
+            raise HTTPException(status_code=503, detail="repository not ready")
+        return await _repo.list_laps()
+
+
+    @app.get("/sessions")
+    async def get_sessions():
+        from fastapi import HTTPException
+        if _repo is None:
+            raise HTTPException(status_code=503, detail="repository not ready")
+        return await _repo.list_sessions()
+
+
+    @app.get("/sessions/{session_id}/laps")
+    async def get_session_laps(session_id: int):
+        from fastapi import HTTPException
+        if _repo is None:
+            raise HTTPException(status_code=503, detail="repository not ready")
+        return await _repo.list_session_laps(session_id)
+
+
+    @app.patch("/sessions/{session_id}")
+    async def patch_session(session_id: int, request: Request):
+        from fastapi import HTTPException
+        if _repo is None:
+            raise HTTPException(status_code=503, detail="repository not ready")
+        body = await request.json()
+        if "notes" not in body:
+            raise HTTPException(status_code=422, detail="missing 'notes' key")
+        notes = body["notes"]
+        if notes is not None and not isinstance(notes, str):
+            raise HTTPException(status_code=422, detail="notes must be string or null")
+        if notes == "":
+            notes = None
+        rows = await _repo.update_session_notes(session_id, notes)
+        if rows == 0:
+            raise HTTPException(status_code=404, detail="session not found")
+        return {"ok": True}
+
+
+    @app.get("/laps/{car_code}/{lap_number}/{lap_id}/frames")
+    async def get_frames(car_code: int, lap_number: int, lap_id: int):
+        from fastapi import HTTPException
+        if _repo is None:
+            raise HTTPException(status_code=503, detail="repository not ready")
+        frames = await _repo.get_frames(lap_id)
+        return _add_distance(frames)
+
+
+    @app.get("/laps/{car_code}/{lap_number}/{lap_id}/export.csv")
+    async def export_lap_csv(car_code: int, lap_number: int, lap_id: int) -> Response:
+        from fastapi import HTTPException
+        if _repo is None:
+            raise HTTPException(status_code=503, detail="repository not ready")
+        frames = _add_distance(await _repo.get_frames(lap_id))
+        body = io.StringIO()
+        if frames:
+            writer = csv.DictWriter(body, fieldnames=list(frames[0].keys()))
+            writer.writeheader()
+            writer.writerows(frames)
+        filename = f"lap-{car_code}-{lap_number}-{lap_id}.csv"
+        return Response(
+            content=body.getvalue(),
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+
+    @app.get("/compare")
+    async def compare() -> FileResponse:
+        return FileResponse(_STATIC / "compare.html")
+
+
+    async def run_broadcaster(ws_queue: asyncio.Queue, clients: set[WebSocket]) -> None:
+        try:
+            while True:
+                frame = await ws_queue.get()
+                if clients:
+                    await asyncio.gather(
+                        *[_send_safe(ws, frame) for ws in list(clients)],
+                        return_exceptions=True,
+                    )
+        except asyncio.CancelledError:
+            pass
+
+
+    # k3s patch: run_broadcaster awaits every client before sending the next frame, so one
+    # client that stops reading (a phone or tab gone to sleep) fills its socket buffer, blocks
+    # send_json() until TCP gives up (~15 min) and freezes the live HUD for everyone. Bound
+    # each send, drop a client that misses the deadline, and close it in the background so
+    # the page's onclose handler reconnects once the client is reading again.
+    _SEND_TIMEOUT_S = 1.0
+    _closing: set[asyncio.Task] = set()
+
+
+    async def _close_quietly(ws: WebSocket) -> None:
+        try:
+            await ws.close(code=1013)
+        except Exception:
+            pass
+
+
+    async def _send_safe(ws: WebSocket, frame: dict) -> None:
+        try:
+            await asyncio.wait_for(ws.send_json(frame), timeout=_SEND_TIMEOUT_S)
+        except Exception:
+            if ws in clients:
+                clients.discard(ws)
+                task = asyncio.create_task(_close_quietly(ws))
+                _closing.add(task)
+                task.add_done_callback(_closing.discard)
+kind: ConfigMap
+metadata:
+  name: telemetryiq-patches
+  namespace: applications

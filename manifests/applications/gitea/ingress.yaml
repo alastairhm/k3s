@@ -1,0 +1,23 @@
+# Reachable at http://dell3050.duckdns.org/gitea/ (DuckDNS hostname for this
+# host). Multiple apps share the one DuckDNS hostname via path-based routing;
+# see whoami/ingress.yaml for the sibling example on /whoami.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitea
+  namespace: applications
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: applications-gitea-stripprefix@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: dell3050.duckdns.org
+      http:
+        paths:
+          - path: /gitea
+            pathType: Prefix
+            backend:
+              service:
+                name: gitea
+                port:
+                  number: 80

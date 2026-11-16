@@ -56,13 +56,13 @@ data:
           - name: "Gitea"
             subtitle: "Git hosting"
             icon: "fas fa-code-branch"
-            url: "http://dell3050.duckdns.org:3333"
+            url: "http://dell3050.duckdns.org/gitea/"
             target: "_blank"
 
           - name: "Woodpecker"
             subtitle: "CI/CD"
             icon: "fas fa-dove"
-            url: "http://dell3050.duckdns.org:8888"
+            url: "http://dell3050.duckdns.org/woodpecker/"
             target: "_blank"
 
       - name: "Media"
@@ -107,7 +107,22 @@ data:
           - name: "n8n"
             subtitle: "Workflow automation"
             icon: "fas fa-project-diagram"
-            url: "http://dell3050.duckdns.org:5678/home/workflows"
+            url: "http://dell3050.duckdns.org/n8n/home/workflows"
+            target: "_blank"
+
+      - name: "Gaming"
+        icon: "fas fa-flag-checkered"
+        items:
+          - name: "TelemetryIQ"
+            subtitle: "GT7 live HUD (LAN only)"
+            icon: "fas fa-tachometer-alt"
+            url: "http://192.168.3.43:30082/"
+            target: "_blank"
+
+          - name: "TelemetryIQ Compare"
+            subtitle: "GT7 lap analysis (LAN only)"
+            icon: "fas fa-chart-line"
+            url: "http://192.168.3.43:30082/compare"
             target: "_blank"
 
       - name: "Experiments"

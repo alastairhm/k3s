@@ -33,6 +33,11 @@ manifests/
       service.yaml        # NodePort 30081
       ingress.yaml         # dell3050.duckdns.org/homer
       middleware.yaml      # strips the /homer prefix before forwarding
+    telemetryiq/           # GT7 telemetry recorder (github.com/a1exus/TelemetryIQ)
+      deployment.yaml      # hostPort 33740/udp for GT7 telemetry; locally built image
+      configmap-patches.yaml  # patched compare.html and server.py, mounted over the image's copies
+      pvc.yaml             # SQLite database (local-path)
+      service.yaml         # NodePort 30082, LAN only (no auth, so no Ingress)
 ```
 
 Each subdirectory under `manifests/applications/` is a self-contained app: Deployment + Service
@@ -69,6 +74,35 @@ Ingress `host: dell3050.duckdns.org` with a unique `path: /<app>`, and add a mat
 `Middleware` with `stripPrefix.prefixes: ["/<app>"]` referenced via the
 `traefik.ingress.kubernetes.io/router.middlewares: applications-<app>-stripprefix@kubernetescrd`
 annotation (see whoami/ or homer/ for a working example).
+
+## TelemetryIQ (GT7 telemetry)
+
+There is no published image, so build it from upstream and import it into k3s's containerd
+(the import needs sudo). The tag is the upstream commit and must match `deployment.yaml`:
+
+```
+git clone https://github.com/a1exus/TelemetryIQ.git && cd TelemetryIQ && git checkout 89ae54b
+docker build -t telemetryiq:89ae54b .
+docker save telemetryiq:89ae54b | sudo k3s ctr images import -
+```
+
+Set `PS_IP` in `deployment.yaml` to the PlayStation's IP (ideally a DHCP reservation). Auto-discovery
+uses a LAN broadcast that can't leave the pod network. In GT7, turn on UDP telemetry under
+Settings → Options. Then:
+
+```
+kubectl apply -f manifests/applications/namespace.yaml -f manifests/applications/telemetryiq/
+kubectl -n applications logs -f deploy/telemetryiq    # look for [gt-telem] event: lines
+```
+
+`configmap-patches.yaml` holds patched copies of two upstream files (at 89ae54b), mounted over
+the image's copies: `compare.html` (a ReferenceError left `/compare` empty) and `server.py` (one
+stalled WebSocket client, such as a sleeping phone, froze the live HUD for everyone). If you
+rebuild from a newer upstream commit, check whether these are fixed there and drop the mounts if so.
+
+Live HUD: `http://192.168.3.43:30082/`. Lap comparison: `http://192.168.3.43:30082/compare`.
+Laps are recorded to `/data/telemetry.db` on the PVC. Keep the replica count at 1 because
+of the hostPort and the single SQLite file.
 
 Remove an app:
 

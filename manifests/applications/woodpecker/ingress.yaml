@@ -1,0 +1,23 @@
+# Reachable at http://dell3050.duckdns.org/woodpecker/ (DuckDNS hostname for this
+# host). Multiple apps share the one DuckDNS hostname via path-based routing;
+# see whoami/ingress.yaml for the sibling example on /whoami.
+# No stripPrefix middleware: WOODPECKER_HOST includes /woodpecker, so the server
+# serves its routes under that prefix itself.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: woodpecker
+  namespace: applications
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: dell3050.duckdns.org
+      http:
+        paths:
+          - path: /woodpecker
+            pathType: Prefix
+            backend:
+              service:
+                name: woodpecker
+                port:
+                  number: 80
